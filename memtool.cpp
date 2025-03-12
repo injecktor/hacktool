@@ -11,8 +11,7 @@ PROCESSENTRY32* mem_tool::find_process(LPCTSTR proc_name) {
     proc_struct->dwSize = sizeof(PROCESSENTRY32);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (Process32First(snapshot, proc_struct))
-    {
+    if (Process32First(snapshot, proc_struct)) {
         do {
             if (!_tcscmp(proc_struct->szExeFile, proc_name)) {
                 CloseHandle(snapshot);
@@ -22,6 +21,28 @@ PROCESSENTRY32* mem_tool::find_process(LPCTSTR proc_name) {
     }
 
     CloseHandle(snapshot);
+    return nullptr;
+}
+
+MODULEENTRY32* mem_tool::find_module(DWORD process_id, LPCTSTR module_name) {
+    MODULEENTRY32 *module_struct = new MODULEENTRY32;
+    module_struct->dwSize = sizeof(MODULEENTRY32);
+
+    DWORD snap_requests[] = { TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32 };
+    size_t snap_requests_count = sizeof(snap_requests) / sizeof(DWORD);
+
+    for (size_t i = 0; i < snap_requests_count; i++) {
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, process_id);
+        if (Module32First(snapshot, module_struct)) {
+            do {
+                if (!_tcscmp(module_struct->szModule, module_name)) {
+                    CloseHandle(snapshot);
+                    return module_struct;
+                }
+            } while (Module32Next(snapshot, module_struct));
+        }
+        CloseHandle(snapshot);
+    }
     return nullptr;
 }
 

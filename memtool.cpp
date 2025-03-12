@@ -55,12 +55,11 @@ string mem_tool::trim(string str) {
             result += str[i];
         }
     }
-    return str;
+    return result;
 }
 
 BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
     mask = mem_tool::trim(mask);
-    pattern = mem_tool::trim(pattern);
     size_t pattern_size = pattern.length();
     size_t mask_size = mask.length();
     if (mask_size > pattern_size || size < mask_size) {
@@ -85,28 +84,22 @@ BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
 BYTE* mem_tool::sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern, string mask) {
     BYTE* current_chunk = begin;
     BYTE* end = begin + size;
-    SIZE_T bytesRead;
     BYTE buffer[KBYTE];
     DWORD count;
     while (current_chunk < end) {
         count = end - current_chunk > sizeof(buffer) ? sizeof(buffer) : end - current_chunk;
 
-        DWORD oldprotect;
-        if (!VirtualProtectEx(process, current_chunk, count, PROCESS_VM_READ, &oldprotect)) {
-            return nullptr;
-        }
-        ReadProcessMemory(process, current_chunk, &buffer, count, &bytesRead);
-        VirtualProtectEx(process, current_chunk, count, oldprotect, NULL);
-        if (bytesRead == 0) {
+        SIZE_T bytes_readed = read_mem(process, current_chunk, count, buffer);
+        if (bytes_readed == 0) {
             return nullptr;
         }
 
-        BYTE *internal_address = sig_scan(reinterpret_cast<BYTE*>(buffer), bytesRead, pattern, mask);
+        BYTE *internal_address = sig_scan(reinterpret_cast<BYTE*>(buffer), bytes_readed, pattern, mask);
         if (internal_address != nullptr) {
             uintptr_t offset_from_buffer = reinterpret_cast<uintptr_t>(internal_address) - reinterpret_cast<uintptr_t>(buffer);
             return current_chunk + offset_from_buffer;
         } else {
-            current_chunk += bytesRead;
+            current_chunk += bytes_readed;
         }
     }
     return nullptr;
@@ -146,4 +139,26 @@ string mem_tool::str_to_hex_str(string str) {
         result += (char)stoi(str.substr(i, 2), 0, 16);
     }
     return result;
+}
+
+SIZE_T mem_tool::read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer) {
+    DWORD oldprotect;
+    SIZE_T bytes_readed;
+    if (!VirtualProtectEx(process, address, count, PROCESS_VM_READ, &oldprotect)) {
+        return 0;
+    }
+    ReadProcessMemory(process, address, buffer, count, &bytes_readed);
+    VirtualProtectEx(process, address, count, oldprotect, NULL);
+    return bytes_readed;
+}
+
+SIZE_T mem_tool::read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer) {
+    DWORD oldprotect;
+    SIZE_T bytes_written;
+    if (!VirtualProtectEx(process, address, count, PROCESS_VM_READ, &oldprotect)) {
+        return 0;
+    }
+    WriteProcessMemory(process, address, buffer, count, &bytes_written);
+    VirtualProtectEx(process, address, count, oldprotect, NULL);
+    return bytes_written;
 }

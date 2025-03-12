@@ -24,4 +24,6 @@ namespace mem_tool {
     SIZE_T inject_dll(HANDLE process, string dll_path);
     // Input must be even-length
     string str_to_hex_str(string str);
+    SIZE_T read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer);
+    SIZE_T write_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer);
 }

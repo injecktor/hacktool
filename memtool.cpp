@@ -66,54 +66,50 @@ BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
     if (mask_size > pattern_size || size < mask_size) {
         return nullptr;
     }
-	for (DWORD i = 0; i < size - mask_size + 1; i++) {
-		bool found = true;
+    for (DWORD i = 0; i < size - mask_size + 1; i++) {
+        bool found = true;
         BYTE *ptr = begin + i;
-		for (DWORD j = 0; j < mask_size; j++) {
-			if (static_cast<BYTE>(pattern[j]) != *(ptr + j) && mask[j] != '?') {
-				found = false;
-				break;
-			}
-		}
-		if (found) {
-			return ptr;
-		}
-	}
-	return nullptr;
+        for (DWORD j = 0; j < mask_size; j++) {
+            if (static_cast<BYTE>(pattern[j]) != *(ptr + j) && mask[j] != '?') {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return ptr;
+        }
+    }
+    return nullptr;
 }
 
 BYTE* mem_tool::sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern, string mask) {
-	BYTE* current_chunk = begin;
+    BYTE* current_chunk = begin;
     BYTE* end = begin + size;
-	SIZE_T bytesRead;
+    SIZE_T bytesRead;
     BYTE buffer[KBYTE];
     DWORD count;
-	while (current_chunk < end) {
+    while (current_chunk < end) {
         count = end - current_chunk > sizeof(buffer) ? sizeof(buffer) : end - current_chunk;
 
-		DWORD oldprotect;
-		if (!VirtualProtectEx(process, current_chunk, count, PROCESS_VM_READ, &oldprotect)) {
+        DWORD oldprotect;
+        if (!VirtualProtectEx(process, current_chunk, count, PROCESS_VM_READ, &oldprotect)) {
             return nullptr;
         }
-		ReadProcessMemory(process, current_chunk, &buffer, count, &bytesRead);
-        static bool is_first = true;
-        if (is_first) {
-            is_first = false;
+        ReadProcessMemory(process, current_chunk, &buffer, count, &bytesRead);
+        VirtualProtectEx(process, current_chunk, count, oldprotect, NULL);
+        if (bytesRead == 0) {
+            return nullptr;
         }
-		VirtualProtectEx(process, current_chunk, count, oldprotect, NULL);
-		if (bytesRead == 0) {
-			return nullptr;
-		}
 
-		BYTE *internal_address = sig_scan(reinterpret_cast<BYTE*>(buffer), bytesRead, pattern, mask);
-		if (internal_address != nullptr) {
-			uintptr_t offset_from_buffer = reinterpret_cast<uintptr_t>(internal_address) - reinterpret_cast<uintptr_t>(buffer);
-			return current_chunk + offset_from_buffer;
-		} else {
-			current_chunk += bytesRead;
-		}
-	}
-	return nullptr;
+        BYTE *internal_address = sig_scan(reinterpret_cast<BYTE*>(buffer), bytesRead, pattern, mask);
+        if (internal_address != nullptr) {
+            uintptr_t offset_from_buffer = reinterpret_cast<uintptr_t>(internal_address) - reinterpret_cast<uintptr_t>(buffer);
+            return current_chunk + offset_from_buffer;
+        } else {
+            current_chunk += bytesRead;
+        }
+    }
+    return nullptr;
 }
 
 SIZE_T mem_tool::inject_dll(HANDLE process, string dll_path) {

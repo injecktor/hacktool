@@ -1,9 +1,13 @@
 #include "memtool.hpp"
 
+#define KBYTE 1024
+#define ALIGN(_x, _base) ((_x / _base + 1) * _base)
+
 using namespace mem_tool;
 using namespace std;
 
-void mem_tool::find_process(PROCESSENTRY32 *proc_struct, LPCTSTR proc_name) {
+PROCESSENTRY32* mem_tool::find_process(LPCTSTR proc_name) {
+    PROCESSENTRY32 *proc_struct = new PROCESSENTRY32;
     proc_struct->dwSize = sizeof(PROCESSENTRY32);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -11,12 +15,14 @@ void mem_tool::find_process(PROCESSENTRY32 *proc_struct, LPCTSTR proc_name) {
     {
         do {
             if (!_tcscmp(proc_struct->szExeFile, proc_name)) {
-                return;
+                CloseHandle(snapshot);
+                return proc_struct;
             }
         } while (Process32Next(snapshot, proc_struct));
     }
 
     CloseHandle(snapshot);
+    return nullptr;
 }
 
 string mem_tool::trim(string str) {
@@ -86,6 +92,30 @@ char* mem_tool::sig_scan(HANDLE process, char *begin, DWORD size, string pattern
 	return nullptr;
 }
 
+SIZE_T mem_tool::inject_dll(HANDLE process, string dll_path) {
+    SIZE_T size = filesystem::file_size(dll_path);
+    SIZE_T aligned_size;
+    if (!size) {
+        return 0;
+    }
+    aligned_size = ALIGN(size, KBYTE);
+    LPVOID lpHeapBaseAddress = VirtualAllocEx(process, NULL, aligned_size, MEM_COMMIT, PAGE_READWRITE);
+    if (!lpHeapBaseAddress) {
+        return 0;
+    }
+    SIZE_T bytesWritten = 0;
+    if (!WriteProcessMemory(process, lpHeapBaseAddress, dll_path.c_str(), size, &bytesWritten)) {
+        return 0;
+    }
+    LPTHREAD_START_ROUTINE lpLoadLibraryStartAddress = 
+             (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandleA("Kernel32.dll"), "LoadLibraryA");
+    if (!CreateRemoteThread(process, NULL, 0, lpLoadLibraryStartAddress, 
+                lpHeapBaseAddress, 0, NULL)) {
+        return 0;
+    }
+    return bytesWritten;
+}
+
 string mem_tool::str_to_hex_str(string str) {
     string result;
     size_t length = str.length();
@@ -97,18 +127,4 @@ string mem_tool::str_to_hex_str(string str) {
         result += (char)stoi(str.substr(i, 2), 0, 16);
     }
     return result;
-}
-
-int main() {
-    PROCESSENTRY32 process;
-    printf("Started\n");
-    find_process(&process, _T("application.exe"));
-    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, NULL, process.th32ProcessID);
-    string pattern = "554889e54883ec30e832010000ba05000000b903000000e8b3ffffff8945fcba05000000b903000000e871ffffff8945f88b45fc89c2488d054e7b00004889c1e8";
-    pattern = str_to_hex_str(pattern);
-    string mask = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-    // char *sig_addr = sig_scan(hProcess, _T("application.exe"), 332 * 1024, pattern, mask);
-    // printf("Address found: %p", sig_addr);
-    CloseHandle(hProcess);
-    return 0;
 }

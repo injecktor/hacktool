@@ -16,8 +16,8 @@ namespace mem_tool {
     MODULEENTRY32* find_module(DWORD process_id, LPCTSTR module_name);
     string trim(string str);
     // Pattern must be hex string
-    char* sig_scan(char *begin, DWORD size, string pattern, string mask);
-    char* sig_scan(HANDLE process, char *begin, DWORD size, string pattern, string mask);
+    BYTE* sig_scan(BYTE *begin, DWORD size, string pattern, string mask);
+    BYTE* sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern, string mask);
     // Process have to have PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, 
     // PROCESS_VM_WRITE, and PROCESS_VM_READ rights
     // Returns written bytes count

@@ -58,19 +58,19 @@ string mem_tool::trim(string str) {
     return str;
 }
 
-char* mem_tool::sig_scan(char *begin, DWORD size, string pattern, string mask) {
+BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
     mask = mem_tool::trim(mask);
     pattern = mem_tool::trim(pattern);
     size_t pattern_size = pattern.length();
     size_t mask_size = mask.length();
-    if (mask_size > pattern_size) {
+    if (mask_size > pattern_size || size < mask_size) {
         return nullptr;
     }
-	for (DWORD i = 0; i < size - pattern_size; i++) {
+	for (DWORD i = 0; i < size - mask_size + 1; i++) {
 		bool found = true;
-        char *ptr = begin + i;
+        BYTE *ptr = begin + i;
 		for (DWORD j = 0; j < mask_size; j++) {
-			if (pattern[j] != *(ptr + j) && mask[j] != '?') {
+			if (static_cast<BYTE>(pattern[j]) != *(ptr + j) && mask[j] != '?') {
 				found = false;
 				break;
 			}
@@ -82,29 +82,32 @@ char* mem_tool::sig_scan(char *begin, DWORD size, string pattern, string mask) {
 	return nullptr;
 }
 
-char* mem_tool::sig_scan(HANDLE process, char *begin, DWORD size, string pattern, string mask) {
-	char* current_chunk = begin;
-    char* end = begin + size;
+BYTE* mem_tool::sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern, string mask) {
+	BYTE* current_chunk = begin;
+    BYTE* end = begin + size;
 	SIZE_T bytesRead;
-
+    BYTE buffer[KBYTE];
+    DWORD count;
 	while (current_chunk < end) {
-		char buffer[4096];
+        count = end - current_chunk > sizeof(buffer) ? sizeof(buffer) : end - current_chunk;
 
 		DWORD oldprotect;
-		if (!VirtualProtectEx(process, current_chunk, sizeof(buffer), PROCESS_VM_READ, &oldprotect)) {
+		if (!VirtualProtectEx(process, current_chunk, count, PROCESS_VM_READ, &oldprotect)) {
             return nullptr;
         }
-		ReadProcessMemory(process, current_chunk, &buffer, sizeof(buffer), &bytesRead);
-		VirtualProtectEx(process, current_chunk, sizeof(buffer), oldprotect, NULL);
-
+		ReadProcessMemory(process, current_chunk, &buffer, count, &bytesRead);
+        static bool is_first = true;
+        if (is_first) {
+            is_first = false;
+        }
+		VirtualProtectEx(process, current_chunk, count, oldprotect, NULL);
 		if (bytesRead == 0) {
 			return nullptr;
 		}
 
-		char *internal_address = sig_scan((char*)&buffer, bytesRead, pattern, mask);
-
+		BYTE *internal_address = sig_scan(reinterpret_cast<BYTE*>(buffer), bytesRead, pattern, mask);
 		if (internal_address != nullptr) {
-			uintptr_t offset_from_buffer = internal_address - (char*)&buffer;
+			uintptr_t offset_from_buffer = reinterpret_cast<uintptr_t>(internal_address) - reinterpret_cast<uintptr_t>(buffer);
 			return current_chunk + offset_from_buffer;
 		} else {
 			current_chunk += bytesRead;
@@ -128,8 +131,8 @@ SIZE_T mem_tool::inject_dll(HANDLE process, string dll_path) {
     if (!WriteProcessMemory(process, lpHeapBaseAddress, dll_path.c_str(), size, &bytesWritten)) {
         return 0;
     }
-    LPTHREAD_START_ROUTINE lpLoadLibraryStartAddress = 
-             (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandleA("Kernel32.dll"), "LoadLibraryA");
+    LPTHREAD_START_ROUTINE lpLoadLibraryStartAddress = reinterpret_cast<LPTHREAD_START_ROUTINE>(
+            GetProcAddress(GetModuleHandleA("Kernel32.dll"), "LoadLibraryA"));
     if (!CreateRemoteThread(process, NULL, 0, lpLoadLibraryStartAddress, 
                 lpHeapBaseAddress, 0, NULL)) {
         return 0;
@@ -144,7 +147,6 @@ string mem_tool::str_to_hex_str(string str) {
         return result;
     }
     for (size_t i = 0; i < length; i += 2) {
-        string tmp = str.substr(i, 2);
         result += (char)stoi(str.substr(i, 2), 0, 16);
     }
     return result;

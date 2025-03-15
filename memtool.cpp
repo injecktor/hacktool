@@ -28,21 +28,16 @@ MODULEENTRY32* mem_tool::find_module(DWORD process_id, LPCTSTR module_name) {
     MODULEENTRY32 *module_struct = new MODULEENTRY32;
     module_struct->dwSize = sizeof(MODULEENTRY32);
 
-    DWORD snap_requests[] = { TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32 };
-    size_t snap_requests_count = sizeof(snap_requests) / sizeof(DWORD);
-
-    for (size_t i = 0; i < snap_requests_count; i++) {
-        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, process_id);
-        if (Module32First(snapshot, module_struct)) {
-            do {
-                if (!_tcscmp(module_struct->szModule, module_name)) {
-                    CloseHandle(snapshot);
-                    return module_struct;
-                }
-            } while (Module32Next(snapshot, module_struct));
-        }
-        CloseHandle(snapshot);
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
+    if (Module32First(snapshot, module_struct)) {
+        do {
+            if (!_tcscmp(module_struct->szModule, module_name)) {
+                CloseHandle(snapshot);
+                return module_struct;
+            }
+        } while (Module32Next(snapshot, module_struct));
     }
+    CloseHandle(snapshot);
     return nullptr;
 }
 
@@ -152,7 +147,7 @@ SIZE_T mem_tool::read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buff
     return bytes_readed;
 }
 
-SIZE_T mem_tool::read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer) {
+SIZE_T mem_tool::write_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer) {
     DWORD oldprotect;
     SIZE_T bytes_written;
     if (!VirtualProtectEx(process, address, count, PROCESS_VM_READ, &oldprotect)) {

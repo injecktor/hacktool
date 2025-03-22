@@ -17,8 +17,8 @@ namespace mem_tool {
     MODULEENTRY32* find_thread(DWORD process_id);
     string trim(string str);
     // Pattern must be hex string
-    BYTE* sig_scan(BYTE *begin, DWORD size, string pattern, string mask);
-    BYTE* sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern, string mask);
+    BYTE* sig_scan(PVOID begin, DWORD size, string pattern, string mask);
+    BYTE* sig_scan(HANDLE process, PVOID begin, DWORD size, string pattern, string mask);
     // Process have to have PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, 
     // PROCESS_VM_WRITE, and PROCESS_VM_READ rights
     // Returns written bytes count
@@ -26,6 +26,6 @@ namespace mem_tool {
     // Converts "48e1a6B0" into "\x48\xe1\xa6\xB0"
     // Input must be even-length
     string str_to_hex_str(string str);
-    SIZE_T read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer);
-    SIZE_T write_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer);
+    SIZE_T read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer);
+    SIZE_T write_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer);
 }

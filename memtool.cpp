@@ -53,7 +53,7 @@ string mem_tool::trim(string str) {
     return result;
 }
 
-BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
+BYTE* mem_tool::sig_scan(PVOID begin, DWORD size, string pattern, string mask) {
     mask = mem_tool::trim(mask);
     size_t pattern_size = pattern.length();
     size_t mask_size = mask.length();
@@ -62,7 +62,7 @@ BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
     }
     for (DWORD i = 0; i < size - mask_size + 1; i++) {
         bool found = true;
-        BYTE *ptr = begin + i;
+        PBYTE ptr = reinterpret_cast<PBYTE>(begin) + i;
         for (DWORD j = 0; j < mask_size; j++) {
             if (static_cast<BYTE>(pattern[j]) != *(ptr + j) && mask[j] != '?') {
                 found = false;
@@ -76,9 +76,9 @@ BYTE* mem_tool::sig_scan(BYTE *begin, DWORD size, string pattern, string mask) {
     return nullptr;
 }
 
-BYTE* mem_tool::sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern, string mask) {
-    BYTE* current_chunk = begin;
-    BYTE* end = begin + size;
+BYTE* mem_tool::sig_scan(HANDLE process, PVOID begin, DWORD size, string pattern, string mask) {
+    auto current_chunk = reinterpret_cast<PBYTE>(begin);
+    PBYTE end = reinterpret_cast<PBYTE>(begin) + size;
     BYTE buffer[KBYTE];
     DWORD count;
     while (current_chunk < end) {
@@ -101,7 +101,7 @@ BYTE* mem_tool::sig_scan(HANDLE process, BYTE *begin, DWORD size, string pattern
 }
 
 SIZE_T mem_tool::inject_dll(HANDLE process, string dll_path) {
-    SIZE_T size = filesystem::file_size(dll_path);
+    auto size = static_cast<SIZE_T>(filesystem::file_size(dll_path));
     SIZE_T aligned_size;
     if (!size) {
         return 0;
@@ -136,10 +136,10 @@ string mem_tool::str_to_hex_str(string str) {
     return result;
 }
 
-SIZE_T mem_tool::read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer) {
+SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
     DWORD oldprotect;
     SIZE_T bytes_readed;
-    if (!VirtualProtectEx(process, address, count, PROCESS_VM_READ, &oldprotect)) {
+    if (!VirtualProtectEx(process, address, count, PAGE_READWRITE, &oldprotect)) {
         return 0;
     }
     ReadProcessMemory(process, address, buffer, count, &bytes_readed);
@@ -147,10 +147,10 @@ SIZE_T mem_tool::read_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buff
     return bytes_readed;
 }
 
-SIZE_T mem_tool::write_mem(HANDLE process, BYTE *address, DWORD count, BYTE *buffer) {
+SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
     DWORD oldprotect;
     SIZE_T bytes_written;
-    if (!VirtualProtectEx(process, address, count, PROCESS_VM_READ, &oldprotect)) {
+    if (!VirtualProtectEx(process, address, count, PAGE_READWRITE, &oldprotect)) {
         return 0;
     }
     WriteProcessMemory(process, address, buffer, count, &bytes_written);

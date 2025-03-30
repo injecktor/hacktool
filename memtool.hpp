@@ -25,5 +25,5 @@ namespace mem_tool {
     extern string str_to_hex_str(string str);
     extern SIZE_T read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer);
     extern SIZE_T write_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer);
-    extern HWND GetWindowHandle(DWORD process_id);
+    extern HWND get_window_handle(DWORD process_id);
 }

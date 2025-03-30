@@ -171,7 +171,7 @@ SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buf
 
 HWND wnd_handle;
 
-static BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM process_id) {
+static BOOL CALLBACK enum_windows_callback(HWND handle, LPARAM process_id) {
     DWORD wnd_process_id;
     GetWindowThreadProcessId(handle, &wnd_process_id);
     #ifdef MEM_TOOL_VERBAL
@@ -190,8 +190,8 @@ static BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM process_id) {
     return FALSE;
 }
 
-HWND mem_tool::GetWindowHandle(DWORD process_id) {
+HWND mem_tool::get_window_handle(DWORD process_id) {
     wnd_handle = NULL;
-    EnumWindows(EnumWindowsCallback, static_cast<LPARAM>(process_id));
+    EnumWindows(enum_windows_callback, static_cast<LPARAM>(process_id));
     return wnd_handle;
 }

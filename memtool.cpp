@@ -3,39 +3,50 @@
 #define KBYTE 1024
 #define ALIGN(_x, _base) ((_x / _base + 1) * _base)
 
+#ifdef UNICODE
+#define SF "%ls"
+#else
+#define SF "%s"
+#endif
+
 using namespace mem_tool;
 using namespace std;
 
-PROCESSENTRY32* mem_tool::find_process(LPCTSTR proc_name) {
-    PROCESSENTRY32 *proc_struct = new PROCESSENTRY32;
+shared_ptr<PROCESSENTRY32> mem_tool::find_process(LPCTSTR proc_name) {
+    shared_ptr<PROCESSENTRY32> proc_struct = make_shared<PROCESSENTRY32>();
     proc_struct->dwSize = sizeof(PROCESSENTRY32);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (Process32First(snapshot, proc_struct)) {
+    if (Process32First(snapshot, proc_struct.get())) {
         do {
+            #ifdef MEM_TOOL_VERBAL
+            printf("Process name: " SF ", id: %u\n", proc_struct->szExeFile, proc_struct->th32ProcessID);
+            #endif
             if (!_tcscmp(proc_struct->szExeFile, proc_name)) {
                 CloseHandle(snapshot);
                 return proc_struct;
             }
-        } while (Process32Next(snapshot, proc_struct));
+        } while (Process32Next(snapshot, proc_struct.get()));
     }
-
     CloseHandle(snapshot);
     return nullptr;
 }
 
-MODULEENTRY32* mem_tool::find_module(DWORD process_id, LPCTSTR module_name) {
-    MODULEENTRY32 *module_struct = new MODULEENTRY32;
+shared_ptr<MODULEENTRY32> mem_tool::find_module(DWORD process_id, LPCTSTR module_name) {
+    shared_ptr<MODULEENTRY32> module_struct = make_shared<MODULEENTRY32>();
     module_struct->dwSize = sizeof(MODULEENTRY32);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
-    if (Module32First(snapshot, module_struct)) {
+    if (Module32First(snapshot, module_struct.get())) {
+        #ifdef MEM_TOOL_VERBAL
+        printf("Module name: " SF ", id: %u\n", module_struct->szModule, module_struct->th32ModuleID);
+        #endif
         do {
             if (!_tcscmp(module_struct->szModule, module_name)) {
                 CloseHandle(snapshot);
                 return module_struct;
             }
-        } while (Module32Next(snapshot, module_struct));
+        } while (Module32Next(snapshot, module_struct.get()));
     }
     CloseHandle(snapshot);
     return nullptr;
@@ -156,4 +167,31 @@ SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buf
     WriteProcessMemory(process, address, buffer, count, &bytes_written);
     VirtualProtectEx(process, address, count, oldprotect, NULL);
     return bytes_written;
+}
+
+HWND wnd_handle;
+
+static BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM process_id) {
+    DWORD wnd_process_id;
+    GetWindowThreadProcessId(handle, &wnd_process_id);
+    #ifdef MEM_TOOL_VERBAL
+    int length = GetWindowTextLength(handle);
+    if (length) {
+        _TCHAR* buffer = new _TCHAR[length + 1];
+        GetWindowText(handle, buffer, length + 1);
+        printf("Window name: " SF ", process id: %u, window handle: %u\n", buffer, wnd_process_id, handle);
+        delete[] buffer;
+    }
+    #endif
+    if (static_cast<DWORD>(process_id) != wnd_process_id) {
+        return TRUE;
+    }
+    wnd_handle = handle;
+    return FALSE;
+}
+
+HWND mem_tool::GetWindowHandle(DWORD process_id) {
+    wnd_handle = NULL;
+    EnumWindows(EnumWindowsCallback, static_cast<LPARAM>(process_id));
+    return wnd_handle;
 }

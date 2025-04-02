@@ -9,7 +9,7 @@ int __stdcall my_func(int a, int b) {
 }
 
 int main() {
-    auto handle = GetWindowHandle(14460);
+    auto handle = get_window_handle(14460);
     printf("handle: %u\n", handle);
-    return 0;      
+    return 0;
 }

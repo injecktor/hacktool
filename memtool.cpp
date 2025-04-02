@@ -147,6 +147,28 @@ string mem_tool::str_to_hex_str(string str) {
     return result;
 }
 
+#ifdef INTERNAL
+
+SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
+    auto addr = reinterpret_cast<PBYTE>(address);
+    auto buf = reinterpret_cast<PBYTE>(buffer);
+    for (size_t i = 0; i < count; i++) {
+        buf[i] = addr[i];
+    }
+    return count;
+}
+
+SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
+    auto addr = reinterpret_cast<PBYTE>(address);
+    auto buf = reinterpret_cast<PBYTE>(buffer);
+    for (size_t i = 0; i < count; i++) {
+        addr[i] = buf[i];
+    }
+    return count;
+}
+
+#else
+
 SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
     DWORD oldprotect;
     SIZE_T bytes_readed;
@@ -154,7 +176,7 @@ SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buff
         return 0;
     }
     ReadProcessMemory(process, address, buffer, count, &bytes_readed);
-    VirtualProtectEx(process, address, count, oldprotect, NULL);
+    VirtualProtectEx(process, address, count, oldprotect, nullptr);
     return bytes_readed;
 }
 
@@ -165,9 +187,11 @@ SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buf
         return 0;
     }
     WriteProcessMemory(process, address, buffer, count, &bytes_written);
-    VirtualProtectEx(process, address, count, oldprotect, NULL);
+    VirtualProtectEx(process, address, count, oldprotect, nullptr);
     return bytes_written;
 }
+
+#endif
 
 HWND wnd_handle;
 

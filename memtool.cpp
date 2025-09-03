@@ -9,50 +9,52 @@
 #define SF "%s"
 #endif
 
-using namespace mem_tool;
+using namespace hacktool;
 using namespace std;
 
-shared_ptr<PROCESSENTRY32> mem_tool::find_process(LPCTSTR proc_name) {
-    shared_ptr<PROCESSENTRY32> proc_struct = make_shared<PROCESSENTRY32>();
-    proc_struct->dwSize = sizeof(PROCESSENTRY32);
+HWND wnd_handle;
+
+PROCESSENTRY32 hacktool::find_process(LPCTSTR proc_name) {
+    PROCESSENTRY32 proc_struct;
+    proc_struct.dwSize = sizeof(PROCESSENTRY32);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (Process32First(snapshot, proc_struct.get())) {
+    if (Process32First(snapshot, &proc_struct)) {
         do {
-            #ifdef MEM_TOOL_VERBAL
-            printf("Process name: " SF ", id: %u\n", proc_struct->szExeFile, proc_struct->th32ProcessID);
+            #ifdef HACKTOOL_VERBAL
+            printf("Process name: " SF ", id: %u\n", proc_struct.szExeFile, proc_struct.th32ProcessID);
             #endif
-            if (!_tcscmp(proc_struct->szExeFile, proc_name)) {
+            if (!_tcscmp(proc_struct.szExeFile, proc_name)) {
                 CloseHandle(snapshot);
                 return proc_struct;
             }
-        } while (Process32Next(snapshot, proc_struct.get()));
+        } while (Process32Next(snapshot, &proc_struct)));
     }
     CloseHandle(snapshot);
-    return nullptr;
+    return proc_struct;
 }
 
-shared_ptr<MODULEENTRY32> mem_tool::find_module(DWORD process_id, LPCTSTR module_name) {
-    shared_ptr<MODULEENTRY32> module_struct = make_shared<MODULEENTRY32>();
-    module_struct->dwSize = sizeof(MODULEENTRY32);
+MODULEENTRY32 hacktool::target_proc_t::find_module(LPCTSTR module_name) {
+    MODULEENTRY32 module_struct;
+    module_struct.dwSize = sizeof(MODULEENTRY32);
 
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
-    if (Module32First(snapshot, module_struct.get())) {
-        #ifdef MEM_TOOL_VERBAL
-        printf("Module name: " SF ", id: %u\n", module_struct->szModule, module_struct->th32ModuleID);
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, m_proc_id);
+    if (Module32First(snapshot, &module_struct)) {
+        #ifdef HACKTOOL_VERBAL
+        printf("Module name: " SF ", id: %u\n", module_struct.szModule, module_struct.th32ModuleID);
         #endif
         do {
-            if (!_tcscmp(module_struct->szModule, module_name)) {
+            if (!_tcscmp(module_struct.szModule, module_name)) {
                 CloseHandle(snapshot);
                 return module_struct;
             }
-        } while (Module32Next(snapshot, module_struct.get()));
+        } while (Module32Next(snapshot, &module_struct));
     }
     CloseHandle(snapshot);
-    return nullptr;
+    return module_struct;
 }
 
-string mem_tool::trim(string str) {
+string hacktool::trim(string str) {
     string result;
     size_t length = str.length();
     for (size_t i = 0; i < length; i++)
@@ -64,8 +66,8 @@ string mem_tool::trim(string str) {
     return result;
 }
 
-BYTE* mem_tool::sig_scan(PVOID begin, DWORD size, string pattern, string mask) {
-    mask = mem_tool::trim(mask);
+static BYTE* hacktool::_sig_scan(PVOID begin, DWORD size, string pattern, string mask) {
+    mask = hacktool::trim(mask);
     size_t pattern_size = pattern.length();
     size_t mask_size = mask.length();
     if (mask_size > pattern_size || size < mask_size) {
@@ -87,7 +89,7 @@ BYTE* mem_tool::sig_scan(PVOID begin, DWORD size, string pattern, string mask) {
     return nullptr;
 }
 
-BYTE* mem_tool::sig_scan(HANDLE process, PVOID begin, DWORD size, string pattern, string mask) {
+BYTE* hacktool::target_proc_t::sig_scan(PVOID begin, DWORD size, string pattern, string mask) {
     auto current_chunk = reinterpret_cast<PBYTE>(begin);
     PBYTE end = reinterpret_cast<PBYTE>(begin) + size;
     BYTE buffer[KBYTE];
@@ -95,12 +97,12 @@ BYTE* mem_tool::sig_scan(HANDLE process, PVOID begin, DWORD size, string pattern
     while (current_chunk < end) {
         count = end - current_chunk > sizeof(buffer) ? sizeof(buffer) : end - current_chunk;
 
-        SIZE_T bytes_readed = read_mem(process, current_chunk, count, buffer);
+        SIZE_T bytes_readed = read_mem(current_chunk, count, buffer);
         if (bytes_readed == 0) {
             return nullptr;
         }
 
-        BYTE *internal_address = sig_scan(reinterpret_cast<BYTE*>(buffer), bytes_readed, pattern, mask);
+        BYTE *internal_address = _sig_scan(reinterpret_cast<BYTE*>(buffer), bytes_readed, pattern, mask);
         if (internal_address != nullptr) {
             uintptr_t offset_from_buffer = reinterpret_cast<uintptr_t>(internal_address) - reinterpret_cast<uintptr_t>(buffer);
             return current_chunk + offset_from_buffer;
@@ -111,31 +113,31 @@ BYTE* mem_tool::sig_scan(HANDLE process, PVOID begin, DWORD size, string pattern
     return nullptr;
 }
 
-SIZE_T mem_tool::inject_dll(HANDLE process, string dll_path) {
+SIZE_T hacktool::target_proc_t::inject_dll( string dll_path) {
     auto size = static_cast<SIZE_T>(filesystem::file_size(dll_path));
     SIZE_T aligned_size;
     if (!size) {
         return 0;
     }
     aligned_size = ALIGN(size, KBYTE);
-    LPVOID lpHeapBaseAddress = VirtualAllocEx(process, NULL, aligned_size, MEM_COMMIT, PAGE_READWRITE);
+    LPVOID lpHeapBaseAddress = VirtualAllocEx(m_proc, NULL, aligned_size, MEM_COMMIT, PAGE_READWRITE);
     if (!lpHeapBaseAddress) {
         return 0;
     }
     SIZE_T bytesWritten = 0;
-    if (!WriteProcessMemory(process, lpHeapBaseAddress, dll_path.c_str(), size, &bytesWritten)) {
+    if (!WriteProcessMemory(m_proc, lpHeapBaseAddress, dll_path.c_str(), size, &bytesWritten)) {
         return 0;
     }
     LPTHREAD_START_ROUTINE lpLoadLibraryStartAddress = reinterpret_cast<LPTHREAD_START_ROUTINE>(
             GetProcAddress(GetModuleHandleA("Kernel32.dll"), "LoadLibraryA"));
-    if (!CreateRemoteThread(process, NULL, 0, lpLoadLibraryStartAddress, 
+    if (!CreateRemoteThread(m_proc, NULL, 0, lpLoadLibraryStartAddress,
                 lpHeapBaseAddress, 0, NULL)) {
         return 0;
     }
     return bytesWritten;
 }
 
-string mem_tool::str_to_hex_str(string str) {
+string hacktool::str_to_hex_str(string str) {
     string result;
     size_t length = str.length();
     if (length % 2 != 0) {
@@ -148,8 +150,7 @@ string mem_tool::str_to_hex_str(string str) {
 }
 
 #ifdef INTERNAL
-
-SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
+SIZE_T hacktool::target_proc_t::read_mem(PVOID address, DWORD count, PVOID buffer) {
     auto addr = reinterpret_cast<PBYTE>(address);
     auto buf = reinterpret_cast<PBYTE>(buffer);
     for (size_t i = 0; i < count; i++) {
@@ -158,7 +159,7 @@ SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buff
     return count;
 }
 
-SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
+SIZE_T hacktool::target_proc_t::write_mem(PVOID address, DWORD count, PVOID buffer) {
     auto addr = reinterpret_cast<PBYTE>(address);
     auto buf = reinterpret_cast<PBYTE>(buffer);
     for (size_t i = 0; i < count; i++) {
@@ -166,39 +167,34 @@ SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buf
     }
     return count;
 }
-
 #else
-
-SIZE_T mem_tool::read_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
+SIZE_T hacktool::target_proc_t::read_mem(PVOID address, DWORD count, PVOID buffer) {
     DWORD oldprotect;
     SIZE_T bytes_readed;
-    if (!VirtualProtectEx(process, address, count, PAGE_READWRITE, &oldprotect)) {
+    if (!VirtualProtectEx(m_proc, address, count, PAGE_READWRITE, &oldprotect)) {
         return 0;
     }
-    ReadProcessMemory(process, address, buffer, count, &bytes_readed);
-    VirtualProtectEx(process, address, count, oldprotect, nullptr);
+    ReadProcessMemory(m_proc, address, buffer, count, &bytes_readed);
+    VirtualProtectEx(m_proc, address, count, oldprotect, nullptr);
     return bytes_readed;
 }
 
-SIZE_T mem_tool::write_mem(HANDLE process, PVOID address, DWORD count, PVOID buffer) {
+SIZE_T hacktool::target_proc_t::write_mem(PVOID address, DWORD count, PVOID buffer) {
     DWORD oldprotect;
     SIZE_T bytes_written;
-    if (!VirtualProtectEx(process, address, count, PAGE_READWRITE, &oldprotect)) {
+    if (!VirtualProtectEx(m_proc, address, count, PAGE_READWRITE, &oldprotect)) {
         return 0;
     }
-    WriteProcessMemory(process, address, buffer, count, &bytes_written);
-    VirtualProtectEx(process, address, count, oldprotect, nullptr);
+    WriteProcessMemory(m_proc, address, buffer, count, &bytes_written);
+    VirtualProtectEx(m_proc, address, count, oldprotect, nullptr);
     return bytes_written;
 }
-
 #endif
-
-HWND wnd_handle;
 
 static BOOL CALLBACK enum_windows_callback(HWND handle, LPARAM process_id) {
     DWORD wnd_process_id;
     GetWindowThreadProcessId(handle, &wnd_process_id);
-    #ifdef MEM_TOOL_VERBAL
+    #ifdef HACKTOOL_VERBAL
     int length = GetWindowTextLength(handle);
     if (length) {
         _TCHAR* buffer = new _TCHAR[length + 1];
@@ -214,8 +210,22 @@ static BOOL CALLBACK enum_windows_callback(HWND handle, LPARAM process_id) {
     return FALSE;
 }
 
-HWND mem_tool::get_window_handle(DWORD process_id) {
+HWND hacktool::target_proc_t::get_window_handle() {
     wnd_handle = NULL;
-    EnumWindows(enum_windows_callback, static_cast<LPARAM>(process_id));
+    EnumWindows(enum_windows_callback, static_cast<LPARAM>(m_proc_id));
     return wnd_handle;
+}
+
+bool hacktool::target_proc_t::has_handle() {
+    if (m_proc == nullptr) {
+        return false;
+    }
+    return true;
+}
+
+bool hacktool::target_proc_t::has_id() {
+    if (m_proc_id == 0) {
+        return false;
+    }
+    return true;
 }
